@@ -1,0 +1,146 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<dashboard version="1.1" theme="light">
+  <label>BitSight Users Dashboard II</label>
+  <search id="base_search">
+    <query>| inputlookup bitsight_users.csv
+| eval joined_epoch=strptime(joined_time,"%Y-%m-%dT%H:%M:%SZ")
+| eval last_login_epoch=strptime(last_login_time,"%Y-%m-%dT%H:%M:%S.%QZ")
+| eval current_date=strftime(now(),"%Y-%m-%d")
+| eval age_days=round((now()-coalesce(last_login_epoch, joined_epoch))/86400,0)
+| eval account_age_days=round((now()-joined_epoch)/86400,0)
+| eval login_status=if(isnull(last_login_epoch),"Never Logged In","Has Logged In")
+| rex field=roles max_match=1 "^\s*\[\s*\{\s*\"name\"\s*:\s*(?&lt;first_val&gt;null|\"[^\"]+\")"
+| eval _first=coalesce(if(first_val="null","", trim(replace(first_val,"^\"|\"$",""))),"")
+| eval role_name=case(
+    _first="", "None",
+    lower(_first)="vrm operations", "None",
+    lower(_first)="vrm admin", "None",
+    1=1, _first)
+| fields - first_val _first
+| eval age_icon=if(isnull(last_login_epoch) AND age_days&lt;31,"🟦",
+    if(age_days&gt;1095,"❌",
+    if(age_days&gt;730,"🔒",
+    if(age_days&gt;365,"⚠️","✅"))))
+| eval dormant_icon=if(age_days&gt;90,"💤","")
+| eval dormant_days_bucket=case(
+    age_days&lt;30, "✅ Active (&lt;30 days)",
+    age_days&gt;=30 AND age_days&lt;60, "🕓 Inactive 30–59 days",
+    age_days&gt;=60 AND age_days&lt;90, "⏰ Inactive 60–89 days",
+    age_days&gt;=90, "🚫 Dormant 90+ days")
+| eval age_bucket=case(
+    account_age_days&lt;180, "🐣 New",
+    account_age_days&gt;=180 AND account_age_days&lt;365, "🐥 Growing",
+    account_age_days&gt;=365, "🦖 Dinosaur")
+| eval account_age_icon=if(account_age_days&gt;=365,"📅","")
+| eval login_status_icon=if(isnull(last_login_epoch), "🚫 Never Logged In", "✅ Logged In")
+| eval login_bucket=case(
+    isnull(last_login_epoch), "🚫 Never Logged In",
+    age_days&lt;30, "🟢 Active (last 30d)",
+    age_days&lt;90, "🟡 Semi-active (30–90d)",
+    age_days&lt;180, "🟠 At risk (90–180d)",
+    age_days&gt;=180, "🔴 Dormant (&gt;180d)")</query>
+    <earliest>-90d@d</earliest>
+    <latest>now</latest>
+  </search>
+  <row>
+    <panel>
+      <title>Total Users</title>
+      <single>
+        <search base="base_search">
+          <query>| stats count AS "Total Users"</query>
+        </search>
+      </single>
+    </panel>
+    <panel>
+      <title>Never Logged In</title>
+      <single>
+        <search base="base_search">
+          <query>| where login_status="Never Logged In" | stats count</query>
+        </search>
+      </single>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <title>Users by Role</title>
+      <table export="true">
+        <search base="base_search">
+          <query>| stats count by role_name | sort -count role_name</query>
+        </search>
+      </table>
+    </panel>
+    <panel>
+      <title>Login Activity</title>
+      <chart>
+        <search base="base_search">
+          <query>| stats count by login_status</query>
+        </search>
+        <option name="charting.chart">pie</option>
+      </chart>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <table export="true">
+        <title>Dormant Accounts — Days Since Last Login (Counts)</title>
+        <search base="base_search">
+          <query>
+| where isnotnull(last_login_epoch)
+| eval login_age_days=round((now()-last_login_epoch)/86400,0)
+| eval dormant_days_bucket=if(login_age_days&lt;30,"less than 30 days",
+if(login_age_days&gt;=30 AND login_age_days&lt;60,"greater than 30 days and less than 60 days",
+if(login_age_days&gt;=60 AND login_age_days&lt;90,"greater than 60 days and less than 90 days",
+if(login_age_days&gt;=90 AND login_age_days&lt;180,"greater than 90 days and less than 180 days",
+if(login_age_days&gt;=180 AND login_age_days&lt;365,"greater than 180 days and less than 1 year","greater than or equal to 1 year")))))
+| stats count by dormant_days_bucket
+| eval bucket_order=if(dormant_days_bucket="less than 30 days",1,
+if(dormant_days_bucket="greater than 30 days and less than 60 days",2,
+if(dormant_days_bucket="greater than 60 days and less than 90 days",3,
+if(dormant_days_bucket="greater than 90 days and less than 180 days",4,
+if(dormant_days_bucket="greater than 180 days and less than 1 year",5,6)))))
+| sort bucket_order
+| fields - bucket_order
+</query>
+        </search>
+      </table>
+    </panel>
+    <panel>
+      <table export="true">
+        <title>Aged Accounts — Never Logged In (Counts)</title>
+        <search base="base_search">
+          <query>
+| where isnull(last_login_time) OR last_login_time=""
+| eval joined_epoch=strptime(joined_time,"%Y-%m-%dT%H:%M:%SZ")
+| eval age_days=round((now()-joined_epoch)/86400,0)
+| eval age_bucket=if(age_days=90,"equal to 90 days",
+if(age_days&gt;90 AND age_days&lt;180,"greater than 90 days and less than 180 days",
+if(age_days&gt;180 AND age_days&lt;365,"greater than 180 days and less than 1 year",
+if(age_days&gt;365 AND age_days&lt;730,"greater than 1 year and less than 2 years",
+if(age_days&gt;730 AND age_days&lt;1095,"greater than 2 years and less than 3 years",
+if(age_days&gt;1095,"greater than 3 years","less than 90 days"))))))
+| stats count by age_bucket
+| eval bucket_order=if(age_bucket="less than 90 days",1,
+if(age_bucket="equal to 90 days",2,
+if(age_bucket="greater than 90 days and less than 180 days",3,
+if(age_bucket="greater than 180 days and less than 1 year",4,
+if(age_bucket="greater than 1 year and less than 2 years",5,
+if(age_bucket="greater than 2 years and less than 3 years",6,7))))))
+| sort bucket_order
+| fields - bucket_order
+</query>
+        </search>
+      </table>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <title>User Detail Table</title>
+      <table export="true">
+        <search base="base_search">
+          <query>| table formal_name, email, role_name, joined_time, last_login_time, current_date, age_days, account_age_days, age_bucket, account_age_icon, dormant_days_bucket, dormant_icon, age_icon, login_status_icon, login_bucket, login_status, status, group.name, mfa_status, landing_page, joined_epoch, last_login_epoch</query>
+        </search>
+        <option name="refresh.display">progressbar</option>
+      </table>
+    </panel>
+  </row>
+</dashboard>
