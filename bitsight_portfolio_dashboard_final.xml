@@ -1,0 +1,111 @@
+<?xml version="1.0" ?>
+<dashboard version="1.1" theme="light">
+  <label>BitSight Portfolio Dashboard (Fixed Sparkline + Logo)</label>
+  <description>Full dashboard using base search with working icons, sparkline, logos, and rating logic.</description>
+  <search id="base_search">
+    <query>&lt;![CDATA[
+| inputlookup bitsight_portfolio_full.csv
+| rename name AS company_name
+| eval rating_icon=case(
+    rating &lt; 690, &quot;🔥&quot;,
+    rating &gt;= 690 AND rating &lt; 700, &quot;⚠️&quot;,
+    rating &gt;= 700 AND rating &lt; 730, &quot;🟡&quot;,
+    rating &gt;= 730, &quot;✅&quot;
+  )
+| eval logo=&quot;&lt;img src='&quot; . logo . &quot;' height='25'&gt;&quot;
+| eval sparkline=&quot;&lt;img src='&quot; . sparkline . &quot;'&gt;&quot;
+| eval rating_age_days=round((now() - strptime(rating_date, &quot;%Y-%m-%d&quot;)) / 86400)
+]]&gt;</query>
+    <earliest>-90d</earliest>
+    <latest>now</latest>
+  </search>
+  <panel>
+    <title>Total Companies</title>
+    <single>
+      <search base="base_search">
+        <query>| stats count as value</query>
+      </search>
+    </single>
+  </panel>
+  <panel>
+    <title>Average Rating</title>
+    <single>
+      <search base="base_search">
+        <query>| stats avg(rating) as value | eval value=round(value)</query>
+      </search>
+    </single>
+  </panel>
+  <panel>
+    <title>Stale Ratings (30+ Days)</title>
+    <single>
+      <search base="base_search">
+        <query>| where rating_age_days &gt; 30 | stats count as value</query>
+      </search>
+    </single>
+  </panel>
+  <panel>
+    <title>Top Rated Companies</title>
+    <table>
+      <search base="base_search">
+        <query>| sort - rating | head 10 | table rating_icon, company_name, rating, rating_date, logo, sparkline</query>
+      </search>
+      <field name="rating_icon" label=" " html="false"/>
+      <field name="company_name" label="Company" html="false"/>
+      <field name="rating" label="Rating" html="false"/>
+      <field name="rating_date" label="Rating Date" html="false"/>
+      <field name="logo" label="Logo" html="true"/>
+      <field name="sparkline" label="Sparkline" html="true"/>
+    </table>
+  </panel>
+  <panel>
+    <title>Lowest Rated Companies</title>
+    <table>
+      <search base="base_search">
+        <query>| sort + rating | head 10 | table rating_icon, company_name, rating, rating_date, logo, sparkline</query>
+      </search>
+      <field name="rating_icon" label=" " html="false"/>
+      <field name="company_name" label="Company" html="false"/>
+      <field name="rating" label="Rating" html="false"/>
+      <field name="rating_date" label="Rating Date" html="false"/>
+      <field name="logo" label="Logo" html="true"/>
+      <field name="sparkline" label="Sparkline" html="true"/>
+    </table>
+  </panel>
+  <panel>
+    <title>Rating Distribution</title>
+    <chart>
+      <search base="base_search">
+        <query>
+| eval rating_bucket=case(
+    rating &lt; 600, &quot;&lt;600&quot;,
+    rating &lt; 650, &quot;600–649&quot;,
+    rating &lt; 700, &quot;650–699&quot;,
+    rating &lt; 750, &quot;700–749&quot;,
+    rating &lt;= 800, &quot;750–800&quot;
+)
+| stats count by rating_bucket
+| sort rating_bucket
+</query>
+      </search>
+    </chart>
+  </panel>
+  <panel>
+    <title>Portfolio Detail Table</title>
+    <table>
+      <search base="base_search">
+        <query>| table rating_icon, rating, rating_date, company_name, network_size_v4, industry.name, sub_industry.name, relationship.name, tier.name, logo, sparkline</query>
+      </search>
+      <field name="rating_icon" label=" " html="false"/>
+      <field name="rating" label="Rating" html="false"/>
+      <field name="rating_date" label="Date" html="false"/>
+      <field name="company_name" label="Company" html="false"/>
+      <field name="network_size_v4" label="Network Size" html="false"/>
+      <field name="industry.name" label="Industry" html="false"/>
+      <field name="sub_industry.name" label="Sub Industry" html="false"/>
+      <field name="relationship.name" label="Relationship" html="false"/>
+      <field name="tier.name" label="Tier" html="false"/>
+      <field name="logo" label="Logo" html="true"/>
+      <field name="sparkline" label="Sparkline" html="true"/>
+    </table>
+  </panel>
+</dashboard>
